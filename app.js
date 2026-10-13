@@ -19,9 +19,7 @@ const completed=d=>hist.some(h=>h.date===d);
 function getDay(d){if(!days[d]){const x={id:d,date:d,sel:{},notes:''};items.forEach(i=>{if(i.def)x.sel[i.id]=1});days[d]=x}return days[d]}
 function goTo(d){day=getDay(d);save()}
 // Open rule: oldest uncompleted of [today-2, today-1] (not before first use), else today.
-function pickOpenDate(){const t=today();for(const d of [addDays(t,-2),addDays(t,-1)])if(d>=firstUse&&!completed(d))return d;return t}
-function nextAfterDone(d){const t=today();let x=addDays(d,1);while(x<t){if(!completed(x))return x;x=addDays(x,1)}return t}
-function ensureDay(){const t=today();if(lastToday!==t||!day){lastToday=t;goTo(pickOpenDate());return true}return false}
+function ensureDay(){const t=today();if(lastToday!==t||!day){lastToday=t;goTo(t);return true}return false}
 function parseAmt(a){const m=String(a||'').trim().match(/^(\d+(?:\.\d+)?|\.\d+)\s*(.*)$/);return m?{n:parseFloat(m[1]),u:m[2]}:null}
 function fmtN(n){return String(Math.round(n*1000)/1000)}
 function amtText(it,mult){const p=parseAmt(it.amount);if(!p)return it.amount||'';return fmtN(p.n*mult)+(p.u?' '+p.u:'')}
@@ -61,11 +59,12 @@ function render(){
   <button class="btn sec full" id="back">← Back (edit day)</button><button class="btn full" id="copy">Copy</button>${navigator.share?'<button class="btn sec full" id="share">Share…</button>':''}
   <button class="btn sec full" id="done">Done</button></div>`;
   $('#copy').onclick=()=>{commit();copy(summary)};if($('#share'))$('#share').onclick=()=>{commit();navigator.share({text:summary}).catch(()=>{})};
-  $('#done').onclick=()=>{commit();goTo(nextAfterDone(day.date));summary=null;view='log';render();scrollTo(0,0)};
+  $('#done').onclick=()=>{commit();goTo(today());summary=null;view='log';render();scrollTo(0,0)};
   $('#back').onclick=()=>{summary=null;view='log';render()};return}
  if(view==='log'){const t=today(),isT=day.date===t,minD=addDays(t,-MAXBACK);$('#title').textContent='Log';
-  a.innerHTML=`<div class="datebar${isT?'':' past'}"><button class="dnav" id="dprev" ${day.date<=minD?'disabled':''} aria-label="Previous day">‹</button><span class="dlabel">${isT?'Today · ':''}${pretty(day.date)}${completed(day.date)?' ✓':''}</span><button class="dnav" id="dnext" ${isT?'disabled':''} aria-label="Next day">›</button></div>`+
-   (isT?'':`<div class="pastban">Past day: ${pretty(day.date)}${completed(day.date)?' (already sent; finishing again updates it)':''}</div>`)+
+  a.innerHTML=`<div class="datebar${isT?'':' past'}"><button class="dnav" id="dprev" ${day.date<=minD?'disabled':''} aria-label="Previous day">‹</button><span class="dlabel">${isT?'Today · ':''}${pretty(day.date)}</span><button class="dnav" id="dnext" ${isT?'disabled':''} aria-label="Next day">›</button></div>`+
+   ((()=>{const c=completed(day.date),stt=`<span class="stat ${c?'ok':'no'}">${c?'Sent ✓':'Not sent'}</span>`;
+    return isT?(c?`<div class="todayban">Today ${stt}<span class="muted"> · finishing again updates it</span></div>`:''):`<div class="pastban"><span>Past day: ${pretty(day.date)}</span>${stt}</div>`})())+
    items.map(pickRow).join('')+`<button class="btn full${isT?'':' pastbtn'}" id="finish" style="margin-top:12px">${isT?'Finish day':'Finish '+pretty(day.date).replace(',','')}</button>
    <div class="card"><textarea id="notes" placeholder="Notes (optional)">${esc(day.notes)}</textarea></div>`;
   a.querySelectorAll('[data-pick]').forEach(wirePick);
