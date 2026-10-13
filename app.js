@@ -2,12 +2,26 @@ const LS=k=>JSON.parse(localStorage.getItem(k)||'null'),SV=(k,v)=>localStorage.s
 const $=s=>document.querySelector(s),esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const SEED=[['Synthroid','100 mcg',1],['Vyvanse','20 mg',1],['Creatine','5 g',1],['Fish oil','4 g',1],['Vitamin K2 + D3','1 capsule',1],['B2 riboflavin','100 mg',1],['B-complex (Organika)','1 capsule',1],['Saw palmetto','1600 mg',1],['Plant sterol','500 mg',1],['L-citrulline','2 g',1],['Oat yogurt with walnuts + dark chocolate','',1],['Salmon or cod with veg','',1],['Mixed nuts','',1],['Fennel tea','',1],['Soy milk in tea','',1],['Electrolytes (Re-Lyte)','',0],['Protein shake','30 g',0],['Magnesium L-threonate','50 mg',0],['Chili','',0],['Curry','',0],['Keto pasta','',0],['Steak and salad','',0],['Belly Comfort tea','',0],['Ginger Aid tea','',0],['Beer','1 drink',0],['Scotch','1 drink',0],['Gin and tonic','1 drink',0]];
-let items=LS('items')||SEED.map(([name,amount,d])=>({id:uid(),name,amount,def:!!d})),hist=LS('hist')||[],day=LS('day'),view='log',summary=null,editing=null;
+let items=LS('items')||SEED.map(([name,amount,d])=>({id:uid(),name,amount,def:!!d})),hist=LS('hist')||[],days=LS('days')||{},firstUse=LS('firstUse'),day=null,lastToday=null,view='log',summary=null,editing=null;
 const MULTS=[0.5,1,2];
-const save=()=>{SV('items',items);SV('hist',hist);SV('day',day)};
-const today=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
-function newDay(){day={id:uid(),date:today(),sel:{},notes:''};items.forEach(i=>{if(i.def)day.sel[i.id]=1});save()}
-function ensureDay(){if(!day||day.date!==today()){newDay();return true}return false}
+const save=()=>{SV('items',items);SV('hist',hist);SV('days',days);SV('firstUse',firstUse)};
+const ymd=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const today=()=>ymd(new Date());
+const toD=s=>{const [y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d)};
+const addDays=(s,n)=>{const d=toD(s);d.setDate(d.getDate()+n);return ymd(d)};
+const pretty=s=>toD(s).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+const MAXBACK=30;
+// migrate single-day storage from v1
+(()=>{const old=LS('day');if(old&&old.date&&!days[old.date])days[old.date]=old;localStorage.removeItem('day')})();
+if(!firstUse)firstUse=Object.keys(days).sort()[0]||hist.map(h=>h.date).sort()[0]||today();
+const completed=d=>hist.some(h=>h.date===d);
+// Each date has its own log; a date never visited starts at defaults.
+function getDay(d){if(!days[d]){const x={id:d,date:d,sel:{},notes:''};items.forEach(i=>{if(i.def)x.sel[i.id]=1});days[d]=x}return days[d]}
+function goTo(d){day=getDay(d);save()}
+// Open rule: oldest uncompleted of [today-2, today-1] (not before first use), else today.
+function pickOpenDate(){const t=today();for(const d of [addDays(t,-2),addDays(t,-1)])if(d>=firstUse&&!completed(d))return d;return t}
+function nextAfterDone(d){const t=today();let x=addDays(d,1);while(x<t){if(!completed(x))return x;x=addDays(x,1)}return t}
+function ensureDay(){const t=today();if(lastToday!==t||!day){lastToday=t;goTo(pickOpenDate());return true}return false}
 function parseAmt(a){const m=String(a||'').trim().match(/^(\d+(?:\.\d+)?|\.\d+)\s*(.*)$/);return m?{n:parseFloat(m[1]),u:m[2]}:null}
 function fmtN(n){return String(Math.round(n*1000)/1000)}
 function amtText(it,mult){const p=parseAmt(it.amount);if(!p)return it.amount||'';return fmtN(p.n*mult)+(p.u?' '+p.u:'')}
@@ -20,8 +34,8 @@ function buildSummary(d){const its=d.items;const L=[`DATE ${d.date}`,'','Include
  L.push('','Changed amounts:',...(ch.length?ch.map(i=>`${line(i,i.mult)} (${i.mult}x, default ${i.amount})`):['none']));
  L.push('',`Notes: ${d.notes.trim()||'none'}`);return L.join('\n')}
 function snapshot(){if(document.activeElement&&document.activeElement.blur)document.activeElement.blur();
- return {id:day.id,date:day.date,notes:day.notes,items:items.map(i=>({name:i.name,amount:i.amount,def:i.def,sel:day.sel[i.id]!=null,mult:day.sel[i.id]??1}))}}
-function commit(){const s=snapshot();const i=hist.findIndex(h=>h.id===s.id);if(i>=0)hist[i]=s;else hist.unshift(s);summary=buildSummary(s);save()}
+ return {id:day.date,date:day.date,notes:day.notes,items:items.map(i=>({name:i.name,amount:i.amount,def:i.def,sel:day.sel[i.id]!=null,mult:day.sel[i.id]??1}))}}
+function commit(){const s=snapshot();const i=hist.findIndex(h=>h.date===s.date);if(i>=0)hist[i]=s;else hist.unshift(s);summary=buildSummary(s);save()}
 function toast(m){const d=document.createElement('div');d.className='toast';d.textContent=m;document.body.appendChild(d);setTimeout(()=>d.remove(),1500)}
 function copy(t){(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast('Copied')).catch(()=>{const ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();toast('Copied')})}
 const nudge=el=>{el.classList.remove('nudge');void el.offsetWidth;el.classList.add('nudge')};
@@ -47,13 +61,17 @@ function render(){
   <button class="btn sec full" id="back">← Back (edit day)</button><button class="btn full" id="copy">Copy</button>${navigator.share?'<button class="btn sec full" id="share">Share…</button>':''}
   <button class="btn sec full" id="done">Done</button></div>`;
   $('#copy').onclick=()=>{commit();copy(summary)};if($('#share'))$('#share').onclick=()=>{commit();navigator.share({text:summary}).catch(()=>{})};
-  $('#done').onclick=()=>{commit();newDay();summary=null;view='log';render();scrollTo(0,0)};
+  $('#done').onclick=()=>{commit();goTo(nextAfterDone(day.date));summary=null;view='log';render();scrollTo(0,0)};
   $('#back').onclick=()=>{summary=null;view='log';render()};return}
- if(view==='log'){$('#title').textContent='Today · '+day.date;
-  a.innerHTML=items.map(pickRow).join('')+`<button class="btn full" id="finish" style="margin-top:12px">Finish day</button>
+ if(view==='log'){const t=today(),isT=day.date===t,minD=addDays(t,-MAXBACK);$('#title').textContent='Log';
+  a.innerHTML=`<div class="datebar${isT?'':' past'}"><button class="dnav" id="dprev" ${day.date<=minD?'disabled':''} aria-label="Previous day">‹</button><span class="dlabel">${isT?'Today · ':''}${pretty(day.date)}${completed(day.date)?' ✓':''}</span><button class="dnav" id="dnext" ${isT?'disabled':''} aria-label="Next day">›</button></div>`+
+   (isT?'':`<div class="pastban">Past day: ${pretty(day.date)}${completed(day.date)?' (already sent; finishing again updates it)':''}</div>`)+
+   items.map(pickRow).join('')+`<button class="btn full${isT?'':' pastbtn'}" id="finish" style="margin-top:12px">${isT?'Finish day':'Finish '+pretty(day.date).replace(',','')}</button>
    <div class="card"><textarea id="notes" placeholder="Notes (optional)">${esc(day.notes)}</textarea></div>`;
   a.querySelectorAll('[data-pick]').forEach(wirePick);
   $('#notes').oninput=e=>{day.notes=e.target.value;save()};
+  $('#dprev').onclick=()=>{if(day.date>minD){if(document.activeElement)document.activeElement.blur();goTo(addDays(day.date,-1));render();scrollTo(0,0)}};
+  $('#dnext').onclick=()=>{if(day.date<t){if(document.activeElement)document.activeElement.blur();goTo(addDays(day.date,1));render();scrollTo(0,0)}};
   $('#finish').onclick=()=>{summary=buildSummary(snapshot());render();scrollTo(0,0)};
  }else if(view==='items'){$('#title').textContent='Items';
   const ed=editing&&editing!=='new'?items.find(i=>i.id===editing):null;
@@ -93,5 +111,5 @@ function checkDay(){if(ensureDay())render()}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&!summary&&!drag)checkDay()});
 window.addEventListener('focus',()=>{if(!summary&&!drag)checkDay()});
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{summary=null;editing=null;view=b.dataset.v;render()});
-ensureDay();save();render();
+ensureDay();render();
 if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js',{scope:'./'});
