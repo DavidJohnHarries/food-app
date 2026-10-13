@@ -52,7 +52,7 @@ function wirePick(row){row.onclick=e=>{e.preventDefault();const id=row.dataset.p
   day.sel[id]=1;save();replaceRow(row,it)}}
 function replaceRow(row,it){keepScroll(()=>{const t=document.createElement('div');t.innerHTML=pickRow(it);const n=t.firstElementChild;row.replaceWith(n);wirePick(n)})}
 
-function render(){
+function render(){endDrag();
  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===view));
  const a=$('#app');
  if(summary){$('#title').textContent='Summary';a.innerHTML=`<div class="card"><pre id="sum">${esc(summary)}</pre>
@@ -90,21 +90,30 @@ function render(){
   a.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>copy(buildSummary(hist[b.dataset.c])));
   a.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{if(confirm('Delete this day?')){hist.splice(+b.dataset.d,1);save();render()}});
  }}
-// ---- Reordering (moves DOM nodes in place; never re-renders mid-gesture)
-let drag=null;document.addEventListener('touchmove',e=>{if(drag)e.preventDefault()},{passive:false});
+// ---- Reordering. The dragged row is NEVER detached/re-inserted (that drops iOS pointer capture);
+// only its siblings are moved around it. Cleanup always runs (up/cancel/lostcapture/touchend/blur/hidden/render).
+let drag=null;
+document.addEventListener('touchmove',e=>{if(drag&&e.cancelable)e.preventDefault()},{passive:false});
 function syncFromDom(list){const ids=[...list.children].map(n=>n.dataset.id);items=ids.map(id=>items.find(e=>e.id===id)).filter(Boolean);save()}
+function endDrag(){if(!drag)return;const d=drag;drag=null;
+ try{d.h.releasePointerCapture&&d.h.hasPointerCapture&&d.h.hasPointerCapture(d.id)&&d.h.releasePointerCapture(d.id)}catch(_){}
+ d.row.classList.remove('dragging');d.row.style.transform='';if(d.list.isConnected)syncFromDom(d.list)}
+function dragMove(e){if(!drag||(e.pointerId!=null&&e.pointerId!==drag.id))return;if(e.cancelable)e.preventDefault();
+ const {row,list}=drag;row.style.transform='';const y=e.clientY;let sib;
+ while((sib=row.previousElementSibling)&&y<sib.getBoundingClientRect().top+sib.offsetHeight/2)list.insertBefore(sib,row.nextElementSibling); // move sibling below row
+ while((sib=row.nextElementSibling)&&y>sib.getBoundingClientRect().top+sib.offsetHeight/2)list.insertBefore(sib,row);                       // move sibling above row
+ const r=row.getBoundingClientRect();row.style.transform=`translateY(${y-(r.top+r.height/2)}px)`;
+ if(y<60)scrollBy(0,-8);else if(y>innerHeight-110)scrollBy(0,8)}
+document.addEventListener('pointermove',dragMove,{passive:false});
+['pointerup','pointercancel','touchend','touchcancel'].forEach(t=>document.addEventListener(t,e=>{if(drag&&(e.pointerId==null||e.pointerId===drag.id))endDrag()}));
+window.addEventListener('blur',endDrag);document.addEventListener('visibilitychange',()=>{if(document.hidden)endDrag()});
 function setupReorder(list){
  list.querySelectorAll('.mv').forEach(b=>b.onclick=()=>{const row=b.closest('.lr');
-  if(b.dataset.mv==='-1'){if(row.previousElementSibling)list.insertBefore(row,row.previousElementSibling)}else if(row.nextElementSibling)list.insertBefore(row.nextElementSibling,row);syncFromDom(list)});
+  if(b.dataset.mv==='-1'){const p=row.previousElementSibling;if(p)list.insertBefore(p,row.nextElementSibling)}else{const n=row.nextElementSibling;if(n)list.insertBefore(n,row)}syncFromDom(list)});
  list.querySelectorAll('.handle').forEach(h=>{
-  h.addEventListener('pointerdown',e=>{e.preventDefault();const row=h.closest('.lr');drag={row,id:e.pointerId};row.classList.add('dragging');h.setPointerCapture(e.pointerId)});
-  h.addEventListener('pointermove',e=>{if(!drag||e.pointerId!==drag.id)return;e.preventDefault();const row=drag.row;row.style.transform='';const y=e.clientY;let sib;
-   while((sib=row.previousElementSibling)&&y<sib.getBoundingClientRect().top+sib.offsetHeight/2)list.insertBefore(row,sib);
-   while((sib=row.nextElementSibling)&&y>sib.getBoundingClientRect().top+sib.offsetHeight/2)list.insertBefore(sib,row);
-   const r=row.getBoundingClientRect();row.style.transform=`translateY(${y-(r.top+r.height/2)}px)`;
-   if(y<60)scrollBy(0,-8);else if(y>innerHeight-110)scrollBy(0,8)});
-  const end=e=>{if(!drag||e.pointerId!==drag.id)return;drag.row.classList.remove('dragging');drag.row.style.transform='';drag=null;syncFromDom(list)};
-  h.addEventListener('pointerup',end);h.addEventListener('pointercancel',end)})}
+  h.addEventListener('pointerdown',e=>{if(drag)endDrag();e.preventDefault();const row=h.closest('.lr');drag={row,list,h,id:e.pointerId};row.classList.add('dragging');
+   try{h.setPointerCapture(e.pointerId)}catch(_){}});
+  h.addEventListener('lostpointercapture',e=>{if(drag&&e.pointerId===drag.id)endDrag()})})}
 // ---- New day detection
 function checkDay(){if(ensureDay())render()}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&!summary&&!drag)checkDay()});
