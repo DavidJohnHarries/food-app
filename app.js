@@ -40,7 +40,7 @@ const nudge=el=>{el.classList.remove('nudge');void el.offsetWidth;el.classList.a
 function keepScroll(fn){const y=scrollY;fn();scrollTo(0,y);requestAnimationFrame(()=>scrollTo(0,y))}
 
 function pickRow(it){const m=day.sel[it.id],on=m!=null,p=parseAmt(it.amount);
- if(!on)return `<div class="ex" data-pick="${it.id}"><span class="name">${esc(it.name)}<small>${esc(it.amount||(it.def?'Default':'Occasional'))}</small></span><span class="mark">+</span></div>`;
+ if(!on)return `<div class="ex" data-pick="${it.id}"><span class="name">${esc(it.name)}${it.amount?`<small>${esc(it.amount)}</small>`:''}</span><span class="mark">+</span></div>`;
  const amt=p?`<div class="amt"><button class="s" data-st="-1" aria-label="Less">−</button><span class="v" data-v>${esc(amtText(it,m))}${m!==1?` (${m}x)`:''}</span><button class="s" data-st="1" aria-label="More">+</button></div>`:(it.amount?`<small>${esc(it.amount)}</small>`:'');
  return `<div class="ex sel" data-pick="${it.id}"><span class="name">${esc(it.name)}${amt}</span><button class="mark unsel" data-unsel aria-label="Remove">✓</button></div>`}
 function wirePick(row){row.onclick=e=>{e.preventDefault();const id=row.dataset.pick,it=items.find(x=>x.id===id);if(!it)return;
